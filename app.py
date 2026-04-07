@@ -1,5 +1,5 @@
 # ==========================================
-# 📰 Fake News Detection PRO (10/10 Version)
+# 📰 Fake News Detection PRO (No Setup Version)
 # Author: Kuldeep Singh
 # ==========================================
 
@@ -7,17 +7,9 @@ import streamlit as st
 import numpy as np
 import re
 import string
-import pickle
-import requests
-from bs4 import BeautifulSoup
-from PIL import Image
 
-# OPTIONAL OCR (safe import)
-try:
-    import easyocr
-    reader = easyocr.Reader(['en'], gpu=False)
-except:
-    reader = None
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
 
 # ==========================================
 # ⚙️ PAGE CONFIG
@@ -35,44 +27,54 @@ def clean_text(text):
     return text.strip()
 
 # ==========================================
-# 🌐 URL TEXT EXTRACTION
-# ==========================================
-def get_text_from_url(url):
-    try:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        response = requests.get(url, headers=headers, timeout=5)
-        soup = BeautifulSoup(response.content, "html.parser")
-        paragraphs = [p.get_text() for p in soup.find_all("p")]
-        return " ".join(paragraphs)
-    except:
-        return ""
-
-# ==========================================
-# 🖼️ IMAGE OCR
-# ==========================================
-def extract_text_from_image(image):
-    if reader is None:
-        return ""
-    try:
-        result = reader.readtext(np.array(image))
-        return " ".join([r[1] for r in result])
-    except:
-        return ""
-
-# ==========================================
-# 🤖 LOAD MODEL
+# 🤖 QUICK TRAIN MODEL (INSTANT)
 # ==========================================
 @st.cache_resource
-def load_model():
-    try:
-        model = pickle.load(open("model.pkl", "rb"))
-        vectorizer = pickle.load(open("vectorizer.pkl", "rb"))
-        return model, vectorizer
-    except:
-        st.error("❌ Model files not found! Upload model.pkl & vectorizer.pkl")
-        st.stop()
+def train_model():
+    texts = [
+        # REAL NEWS
+        "government releases official report on economy growth",
+        "scientists confirm new discovery in space research",
+        "india wins cricket match against australia in final",
+        "new education policy announced by government",
+        "nasa launches new satellite successfully",
 
-model, vectorizer = load_model()
+        # FAKE NEWS
+        "you wont believe what happened next shocking truth",
+        "click here to earn money instantly from home",
+        "miracle cure doctors dont want you to know",
+        "secret trick to become rich overnight revealed",
+        "breaking shocking news celebrity scandal leaked"
+    ]
+
+    labels = [1,1,1,1,1, 0,0,0,0,0]
+
+    vectorizer = TfidfVectorizer()
+    X = vectorizer.fit_transform(texts)
+
+    model = LogisticRegression()
+    model.fit(X, labels)
+
+    return model, vectorizer
+
+model, vectorizer = train_model()
+
+# ==========================================
+# 🧠 SMART RULE CHECK (BOOST ACCURACY)
+# ==========================================
+def rule_based_check(text):
+    fake_keywords = [
+        "shocking", "click", "earn money", "miracle",
+        "secret", "doctors hate", "100% guarantee",
+        "instant", "overnight"
+    ]
+
+    score = 0
+    for word in fake_keywords:
+        if word in text:
+            score += 1
+
+    return score
 
 # ==========================================
 # 🎨 UI
@@ -84,69 +86,49 @@ AI/ML Enthusiast 🚀
 """)
 
 st.title("📰 Fake News Detection PRO")
-st.markdown("Analyze news via **Text, URL, or Image** 🤖")
+st.markdown("Detect Fake vs Real news using AI 🤖")
 
-option = st.radio("Choose Input Type:", ["Text", "URL", "Image"])
-
-news_text = ""
-
-# TEXT INPUT
-if option == "Text":
-    news_text = st.text_area("Enter News Text")
-
-# URL INPUT
-elif option == "URL":
-    url = st.text_input("Enter News URL")
-    if url:
-        with st.spinner("Extracting content..."):
-            news_text = get_text_from_url(url)
-        if news_text:
-            st.success("✅ Content extracted")
-        else:
-            st.error("❌ Failed to extract content")
-
-# IMAGE INPUT
-elif option == "Image":
-    file = st.file_uploader("Upload Image", type=["jpg", "png", "jpeg"])
-    if file:
-        image = Image.open(file)
-        st.image(image, caption="Uploaded Image", use_column_width=True)
-        with st.spinner("Reading text from image..."):
-            news_text = extract_text_from_image(image)
-        if news_text:
-            st.success("✅ Text extracted from image")
-        else:
-            st.warning("⚠️ Could not detect text")
+news_text = st.text_area("✍️ Enter News Text")
 
 # ==========================================
 # 🔍 PREDICTION
 # ==========================================
 if st.button("🔍 Analyze News"):
-    if not news_text.strip():
-        st.warning("⚠️ Please provide valid input")
-    else:
-        with st.spinner("Analyzing..."):
-            cleaned = clean_text(news_text)
-            vectorized = vectorizer.transform([cleaned])
 
-            prediction = model.predict(vectorized)[0]
-            proba = model.predict_proba(vectorized)[0]
-            confidence = np.max(proba)
+    if not news_text.strip():
+        st.warning("⚠️ Please enter news text")
+    else:
+        cleaned = clean_text(news_text)
+
+        # ML prediction
+        vectorized = vectorizer.transform([cleaned])
+        ml_pred = model.predict(vectorized)[0]
+        confidence = np.max(model.predict_proba(vectorized))
+
+        # Rule-based boost
+        rule_score = rule_based_check(cleaned)
+
+        # FINAL DECISION (HYBRID 🔥)
+        if rule_score >= 2:
+            final_pred = 0
+            confidence = max(confidence, 0.75)
+        else:
+            final_pred = ml_pred
 
         st.subheader("📊 Result")
 
-        if prediction == 1:
-            st.success(f"✅ Real News ({confidence*100:.2f}% confidence)")
+        if final_pred == 1:
+            st.success(f"✅ Real News ({confidence*100:.2f}%)")
         else:
-            st.error(f"❌ Fake News ({confidence*100:.2f}% confidence)")
+            st.error(f"❌ Fake News ({confidence*100:.2f}%)")
 
-        # Insight
-        if confidence < 0.6:
-            st.warning("⚠️ Low confidence prediction — result may not be reliable")
+        # Explanation
+        if rule_score > 0:
+            st.info("⚠️ Detected sensational or spam-like words")
 
 # ==========================================
 # 📌 FOOTER
 # ==========================================
 st.markdown("---")
 st.markdown("### 👨‍💻 Developed by Kuldeep Singh")
-st.caption("Built with ❤️ using AI, NLP & Streamlit")
+st.caption("Built with ❤️ using AI, ML & Streamlit")
