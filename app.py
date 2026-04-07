@@ -1,12 +1,21 @@
 # ==========================================
-# 📰 Fake News Detection PRO (No Setup Version)
+# 📰 Fake News Detection PRO (Enhanced UI)
 # Author: Kuldeep Singh
 # ==========================================
 
 import streamlit as st
 import numpy as np
 import re
-import string
+from PIL import Image
+import requests
+from bs4 import BeautifulSoup
+
+# OPTIONAL OCR
+try:
+    import easyocr
+    reader = easyocr.Reader(['en'], gpu=False)
+except:
+    reader = None
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
@@ -27,19 +36,17 @@ def clean_text(text):
     return text.strip()
 
 # ==========================================
-# 🤖 QUICK TRAIN MODEL (INSTANT)
+# 🤖 MODEL (UNCHANGED)
 # ==========================================
 @st.cache_resource
 def train_model():
     texts = [
-        # REAL NEWS
         "government releases official report on economy growth",
         "scientists confirm new discovery in space research",
         "india wins cricket match against australia in final",
         "new education policy announced by government",
         "nasa launches new satellite successfully",
 
-        # FAKE NEWS
         "you wont believe what happened next shocking truth",
         "click here to earn money instantly from home",
         "miracle cure doctors dont want you to know",
@@ -60,7 +67,7 @@ def train_model():
 model, vectorizer = train_model()
 
 # ==========================================
-# 🧠 SMART RULE CHECK (BOOST ACCURACY)
+# 🧠 RULE CHECK (UNCHANGED)
 # ==========================================
 def rule_based_check(text):
     fake_keywords = [
@@ -68,47 +75,94 @@ def rule_based_check(text):
         "secret", "doctors hate", "100% guarantee",
         "instant", "overnight"
     ]
-
-    score = 0
-    for word in fake_keywords:
-        if word in text:
-            score += 1
-
+    score = sum(word in text for word in fake_keywords)
     return score
+
+# ==========================================
+# 🌐 URL EXTRACT
+# ==========================================
+def get_text_from_url(url):
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        res = requests.get(url, headers=headers, timeout=5)
+        soup = BeautifulSoup(res.content, "html.parser")
+        paragraphs = [p.get_text() for p in soup.find_all("p")]
+        return " ".join(paragraphs)
+    except:
+        return ""
+
+# ==========================================
+# 🖼️ OCR
+# ==========================================
+def extract_text_from_image(image):
+    if reader is None:
+        return ""
+    result = reader.readtext(np.array(image))
+    return " ".join([r[1] for r in result])
 
 # ==========================================
 # 🎨 UI
 # ==========================================
 st.sidebar.title("👨‍💻 About")
-st.sidebar.markdown("""
-**Developer:** Kuldeep Singh  
-AI/ML Enthusiast 🚀  
-""")
+st.sidebar.markdown("**Developer:** Kuldeep Singh 🚀")
 
 st.title("📰 Fake News Detection PRO")
-st.markdown("Detect Fake vs Real news using AI 🤖")
+st.markdown("Now supports **Text, URL, Image & Camera** 🔥")
 
-news_text = st.text_area("✍️ Enter News Text")
+option = st.radio("Choose Input Type:", ["Text", "URL", "Image Upload", "Camera"])
+
+news_text = ""
+
+# TEXT
+if option == "Text":
+    news_text = st.text_area("✍️ Enter News Text")
+
+# URL
+elif option == "URL":
+    url = st.text_input("🔗 Enter News URL")
+    if url:
+        with st.spinner("Extracting..."):
+            news_text = get_text_from_url(url)
+        if news_text:
+            st.success("✅ Text extracted")
+
+# IMAGE UPLOAD
+elif option == "Image Upload":
+    file = st.file_uploader("📤 Upload Image", type=["jpg","png","jpeg"])
+    if file:
+        image = Image.open(file)
+        st.image(image, use_column_width=True)
+        with st.spinner("Reading text..."):
+            news_text = extract_text_from_image(image)
+        if news_text:
+            st.success("✅ Text extracted")
+
+# CAMERA
+elif option == "Camera":
+    camera = st.camera_input("📸 Click Photo")
+    if camera:
+        image = Image.open(camera)
+        st.image(image, use_column_width=True)
+        with st.spinner("Reading text..."):
+            news_text = extract_text_from_image(image)
+        if news_text:
+            st.success("✅ Text extracted")
 
 # ==========================================
-# 🔍 PREDICTION
+# 🔍 PREDICTION (UNCHANGED)
 # ==========================================
 if st.button("🔍 Analyze News"):
-
     if not news_text.strip():
-        st.warning("⚠️ Please enter news text")
+        st.warning("⚠️ Provide input")
     else:
         cleaned = clean_text(news_text)
 
-        # ML prediction
         vectorized = vectorizer.transform([cleaned])
         ml_pred = model.predict(vectorized)[0]
         confidence = np.max(model.predict_proba(vectorized))
 
-        # Rule-based boost
         rule_score = rule_based_check(cleaned)
 
-        # FINAL DECISION (HYBRID 🔥)
         if rule_score >= 2:
             final_pred = 0
             confidence = max(confidence, 0.75)
@@ -122,13 +176,11 @@ if st.button("🔍 Analyze News"):
         else:
             st.error(f"❌ Fake News ({confidence*100:.2f}%)")
 
-        # Explanation
         if rule_score > 0:
-            st.info("⚠️ Detected sensational or spam-like words")
+            st.info("⚠️ Contains suspicious words")
 
 # ==========================================
 # 📌 FOOTER
 # ==========================================
 st.markdown("---")
 st.markdown("### 👨‍💻 Developed by Kuldeep Singh")
-st.caption("Built with ❤️ using AI, ML & Streamlit")
